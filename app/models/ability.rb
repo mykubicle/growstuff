@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Ability
   include CanCan::Ability
 
@@ -12,8 +14,8 @@ class Ability
 
     # everyone can do these things, even non-logged in
     can :read, :all
-    can :view_follows, Member
-    can :view_followers, Member
+    can :read, Follow
+    can :followers, Follow
 
     # Everyone can see the charts
     can :timeline, Garden
@@ -42,9 +44,13 @@ class Ability
     can :read, AlternateName do |an|
       an.crop.approved?
     end
+
+    cannot :create, GardenType
+    cannot :update, GardenType
+    cannot :destroy, GardenType
   end
 
-  def member_abilities(member) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def member_abilities(member)
     return unless member
 
     # members can see even rejected or pending crops if they requested it
@@ -72,6 +78,7 @@ class Ability
       can :manage, Crop
       can :manage, ScientificName
       can :manage, AlternateName
+      can :openfarm, Crop
     end
 
     # any member can create a crop provisionally
@@ -111,9 +118,12 @@ class Ability
     can :update, Photo, owner_id: member.id
     can :destroy, Photo, owner_id: member.id
 
-    can :create, Seed
-    can :update, Seed, owner_id: member.id
+    can :create,  Seed
+    can :update,  Seed, owner_id: member.id
     can :destroy, Seed, owner_id: member.id
+    can :create,  Seed, owner_id: member.id, parent_planting: { owner_id: member.id }
+    can :update,  Seed, owner_id: member.id, parent_planting: { owner_id: member.id }
+    can :destroy, Seed, owner_id: member.id, parent_planting: { owner_id: member.id }
 
     # following/unfollowing permissions
     can :create, Follow
@@ -121,6 +131,10 @@ class Ability
 
     can :destroy, Follow
     cannot :destroy, Follow, followed_id: member.id # can't unfollow yourself
+
+    cannot :create, GardenType
+    cannot :update, GardenType
+    cannot :destroy, GardenType
   end
 
   def admin_abilities(member)

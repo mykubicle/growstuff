@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Charts
   class CropsController < ApplicationController
     respond_to :json
@@ -11,7 +13,7 @@ module Charts
     end
 
     def harvested_for
-      @crop = Crop.find(params[:crop_id])
+      @crop = Crop.find_by!(slug: params[:crop_slug])
       render json: Harvest.joins(:plant_part)
         .where(crop: @crop)
         .group("plant_parts.name").count(:id)
@@ -20,7 +22,7 @@ module Charts
     private
 
     def pie_chart_query(field)
-      @crop = Crop.find(params[:crop_id])
+      @crop = Crop.find_by!(slug: params[:crop_slug])
       render json: Planting.where(crop: @crop)
         .where.not(field.to_sym => nil)
         .where.not(field.to_sym => '')
