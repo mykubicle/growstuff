@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Ability
   include CanCan::Ability
 
@@ -12,8 +14,8 @@ class Ability
 
     # everyone can do these things, even non-logged in
     can :read, :all
-    can :view_follows, Member
-    can :view_followers, Member
+    can :read, Follow
+    can :followers, Follow
 
     # Everyone can see the charts
     can :timeline, Garden
@@ -42,9 +44,13 @@ class Ability
     can :read, AlternateName do |an|
       an.crop.approved?
     end
+
+    cannot :create, GardenType
+    cannot :update, GardenType
+    cannot :destroy, GardenType
   end
 
-  def member_abilities(member) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def member_abilities(member)
     return unless member
 
     # members can see even rejected or pending crops if they requested it
@@ -64,14 +70,17 @@ class Ability
     can :create, Notification do |n|
       n.recipient_id != member.id
     end
-    # note we don't support update for notifications
+    # NOTE: we don't support update for notifications
 
     # only crop wranglers can create/edit/destroy crops
     if member.role? :crop_wrangler
       can :wrangle, Crop
       can :manage, Crop
+      can :manage, CropCompanion
       can :manage, ScientificName
       can :manage, AlternateName
+      can :openfarm, Crop
+      can :gbif, Crop
     end
 
     # any member can create a crop provisionally
@@ -100,20 +109,54 @@ class Ability
     can :create,  Planting
     can :update,  Planting, garden: { owner_id: member.id }, crop: { approval_status: 'approved' }
     can :destroy, Planting, garden: { owner_id: member.id }, crop: { approval_status: 'approved' }
+    can :update, Planting do |planting|
+      planting.garden.garden_collaborators.where(member_id: member.id).any?
+    end
+    can :transplant, Planting, garden: { owner_id: member.id }
+    can :transplant, Planting do |planting|
+      planting.garden.garden_collaborators.where(member_id: member.id).any?
+    end
+    can :destroy, Planting do |planting|
+      planting.garden.garden_collaborators.where(member_id: member.id).any?
+    end
+
+    can :create,  GardenCollaborator, garden: { owner_id: member.id }
+    can :update,  GardenCollaborator, garden: { owner_id: member.id }
+    can :destroy, GardenCollaborator, garden: { owner_id: member.id }
+    can :destroy, GardenCollaborator, member_id: member.id
+
+    can :create,  Activity
+    can :update,  Activity, owner_id: member.id
+    can :destroy, Activity, owner_id: member.id
+    can :update, Activity do |activity|
+      activity.garden&.garden_collaborators&.where(member_id: member.id)&.any?
+    end
+    can :destroy, Activity do |activity|
+      activity.garden&.garden_collaborators&.where(member_id: member.id)&.any?
+    end
 
     can :create,  Harvest
     can :update,  Harvest, owner_id: member.id
     can :destroy, Harvest, owner_id: member.id
     can :update,  Harvest, owner_id: member.id, planting: { owner_id: member.id }
     can :destroy, Harvest, owner_id: member.id, planting: { owner_id: member.id }
+    can :update, Harvest do |harvest|
+      harvest.planting&.garden&.garden_collaborators&.where(member_id: member.id)&.any?
+    end
+    can :destroy, Harvest do |harvest|
+      harvest.planting&.garden&.garden_collaborators&.where(member_id: member.id)&.any?
+    end
 
     can :create, Photo
     can :update, Photo, owner_id: member.id
     can :destroy, Photo, owner_id: member.id
 
-    can :create, Seed
-    can :update, Seed, owner_id: member.id
+    can :create,  Seed
+    can :update,  Seed, owner_id: member.id
     can :destroy, Seed, owner_id: member.id
+    can :create,  Seed, owner_id: member.id, parent_planting: { owner_id: member.id }
+    can :update,  Seed, owner_id: member.id, parent_planting: { owner_id: member.id }
+    can :destroy, Seed, owner_id: member.id, parent_planting: { owner_id: member.id }
 
     # following/unfollowing permissions
     can :create, Follow
@@ -121,6 +164,16 @@ class Ability
 
     can :destroy, Follow
     cannot :destroy, Follow, followed_id: member.id # can't unfollow yourself
+
+    # blocking/unblocking permissions
+    can :create, Block
+    cannot :create, Block, blocked_id: member.id # can't block yourself
+
+    can :destroy, Block, blocker_id: member.id # can only unblock your own blocks
+
+    cannot :create, GardenType
+    cannot :update, GardenType
+    cannot :destroy, GardenType
   end
 
   def admin_abilities(member)
@@ -133,6 +186,11 @@ class Ability
     cannot :destroy, PlantPart
     can :destroy, PlantPart do |pp|
       pp.harvests.empty?
+    end
+    # Admins can't delete themselves
+    cannot :destroy, Member
+    can :destroy, Member do |other_member|
+      other_member&.id != member.id
     end
   end
 end
